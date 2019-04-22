@@ -1,0 +1,103 @@
+from os import listdir
+from os.path import isfile, join
+import numpy as np
+import numpy
+import cv2
+import cv2 as cv
+import argparse
+from matplotlib import pyplot as plt
+mypath=r'C:\Users\Sara\Desktop\pasant'
+onlyfiles = [ f for f in listdir(mypath) if isfile(join(mypath,f)) ]
+images = numpy.empty(len(onlyfiles), dtype=object)
+for n in range(0, len(onlyfiles)):
+  images[n] = cv2.imread( join(mypath,onlyfiles[n]) )
+print( cv2.__version__ )
+#cv2.imshow('rgb',images[n])
+gray = cv2.cvtColor(images[n],cv2.COLOR_BGR2GRAY,0)
+#cv2.imshow('grayscale',gray)
+ret, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+#cv2.imshow('therosholding',thresh)
+kernel = np.ones((3, 3), np.uint8)
+opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN,kernel, iterations=2)
+kernel = np.ones((1, 1), np.uint8)
+closing = cv2.morphologyEx(opening, cv2.MORPH_OPEN,kernel, iterations=2)
+#cv2.imshow('moropholigical',closing)
+sure_bg = cv2.dilate(closing, kernel, iterations=3)
+dist_transform = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
+ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
+sure_fg = np.uint8(sure_fg)
+unknown = cv2.subtract(sure_bg, sure_fg)
+ret, markers = cv2.connectedComponents(sure_fg)
+markers = markers + 1
+markers[unknown == 255] = 0
+dst = cv2.cvtColor(opening, cv2.COLOR_GRAY2RGB)
+markers = cv2.watershed(dst, markers)
+dst[markers == -1] = [255, 0, 0]
+#cv2.imshow('Watershed Method 2.jpg',dst)
+orb = cv2.ORB_create(nfeatures=1500)
+kp, des = orb.detectAndCompute(gray,None)
+for m in des:
+    print(m)
+    img = cv2.drawKeypoints(gray, kp, images[n])
+    #cv2.imshow('ORB Keypoints', images[n])
+    print("90.6")
+    if cv2.waitKey(0) & 0xff == 27:
+     cv2.destroyAllWindows()
+     SZ = 20
+     bin_n = 16  # Number of bins
+
+     affine_flags = cv.WARP_INVERSE_MAP | cv.INTER_LINEAR
+     images[n] = cv2.imread(join(mypath, onlyfiles[n]))
+
+     def deskew(img):
+         m = cv.moments(images[n])
+
+         if abs(m['mu02']) < 1e-2:
+             return img.copy()
+         skew = m['mu11'] / m['mu02']
+         M = np.float32([[1, skew, -0.5 * SZ * skew], [0, 1, 0]])
+         images[n] = cv.warpAffine(images[n], M, (SZ, SZ), flags=affine_flags)
+         return images[n]
+
+
+     def hog(img):
+         gx = cv.Sobel(images[n], cv.CV_32F, 1, 0)
+         gy = cv.Sobel(images[n], cv.CV_32F, 0, 1)
+         mag, ang = cv.cartToPolar(gx, gy)
+         bins = np.int32(bin_n * ang / (2 * np.pi))  # quantizing binvalues in (0...16)
+         bin_cells = bins[:10, :10], bins[10:, :10], bins[:10, 10:], bins[10:, 10:]
+         mag_cells = mag[:10, :10], mag[10:, :10], mag[:10, 10:], mag[10:, 10:]
+         hists = [np.bincount(b.ravel(), m.ravel(), bin_n) for b, m in zip(bin_cells, mag_cells)]
+         hist = np.hstack(hists)  # hist is a 64 bit vector
+         return hist
+
+
+     images[n] = cv2.imread(join(mypath, onlyfiles[n]))
+     if img is None:
+         raise Exception("no malaria found")
+
+     cells = [np.hsplit(row, 100) for row in np.vsplit(images[n], 50)]
+     print(cells[0][0])
+     # First half is trainData, remaining is testData
+     train_cells = [i[:50] for i in cells]
+     test_cells = [i[50:] for i in cells]
+
+     deskewed = [list(map(deskew, row)) for row in train_cells]
+     hogdata = [list(map(hog, row)) for row in deskewed]
+     trainData = np.float32(hogdata).reshape(-1, 64)
+     responses = np.repeat(np.arange(10), 250)[:, np.newaxis]
+     print(deskewed[0][0])
+
+     svm = cv.ml.SVM_create()
+     svm.setKernel(cv.ml.SVM_LINEAR)
+     svm.setType(kernel='linear')
+     svm.train(trainData, cv.ml.ROW_SAMPLE, responses)
+     deskewed = [list(map(deskew, row)) for row in test_cells]
+     hogdata = [list(map(hog, row)) for row in deskewed]
+     testData = np.float32( hogdata).reshape(-1, bin_n * 4)
+     result = svm.predict(testData)[1]
+     mask = result == responses
+     correct = np.count_nonzero(mask)
+     print(correct * 100.0 / result.size)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
