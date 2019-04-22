@@ -1,0 +1,40 @@
+from keras.models import load_model
+import os
+from PIL import Image
+import numpy as np
+import cv2
+
+model = load_model('model2_3.h5')
+
+def preprocess(image):
+    image = cv2.medianBlur(image, 5)
+    image = cv2.normalize(image, image, 0, 255, cv2.NORM_MINMAX)
+    return image
+
+def evaluate_image(image):
+    image = preprocess(np.array(Image.open(image).resize((299, 299), Image.ANTIALIAS)))
+    prediction = model.predict(np.expand_dims(image, axis=0))
+    text = ""
+    print(prediction[0][0])
+    print(prediction[0][1])
+    if prediction[0][0] < 0.5 and prediction[0][1] > 0.5:
+        text = "vivax"
+    elif prediction[0][0] > 0.5 and prediction[0][1] < 0.5:
+        text = "falciparum"
+    cv2.rectangle(image, (0, 0), (120, 25), (255, 255, 255), -1)
+    cv2.putText(image, text,
+                (0,20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 0),
+                2)
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+evaluate_image(os.path.dirname(__file__) + '/dataset/vivax/0a7bfa8a-ee52-4f7a-b9c5-2919ecfa93ef.png')
+evaluate_image(os.path.dirname(__file__) + '/dataset/falciparum/2a_025.JPG')
+evaluate_image(os.path.dirname(__file__) + '/dataset/falciparum/2a_022.JPG')
+evaluate_image(os.path.dirname(__file__) + '/dataset/vivax/03b9d6ad-39ca-4097-a98b-77f02b3c00a7.png')
+evaluate_image(os.path.dirname(__file__) + '/dataset/vivax/3f106606-9a21-40d5-b849-273866fe0f49.png')
+evaluate_image(os.path.dirname(__file__) + '/dataset/falciparum/2a_037.JPG')
